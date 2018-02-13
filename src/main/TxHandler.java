@@ -1,6 +1,14 @@
 package main;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 public class TxHandler {
+
+    private UTXOPool utxoPool;
 
     /**
      * Creates a public ledger whose current UTXOPool (collection of unspent
@@ -9,6 +17,7 @@ public class TxHandler {
      */
     public TxHandler(UTXOPool utxoPool) {
         // IMPLEMENT THIS
+        this.utxoPool = new UTXOPool(utxoPool);
     }
 
     /**
@@ -20,7 +29,9 @@ public class TxHandler {
      *         sum of its output values; and false otherwise.
      */
     public boolean isValidTx(Transaction tx) {
-        // IMPLEMENT THIS
+        return outputsAreInUTXOPool(tx) && isValidSignature(tx) && noDuplicatedUXTO(tx) && outPutValuesNonNegative(tx)
+                && inputValuesGTEOutput(tx);
+
     }
 
     /**
@@ -31,6 +42,110 @@ public class TxHandler {
      */
     public Transaction[] handleTxs(Transaction[] possibleTxs) {
         // IMPLEMENT THIS
+        List<Transaction> validTxs = new ArrayList<>();
+
+        for (Transaction tx : possibleTxs) {
+            if (isValidTx(tx)) {
+                validTxs.add(tx);
+                removeTransactionOutputsFromPool(tx);
+                addTransactionUXTOListToPool(tx);
+            }
+        }
+        return validTxs.toArray(new Transaction[validTxs.size()]);
+    }
+
+    private void addTransactionUXTOListToPool(Transaction tx) {
+        for (int i = 0; i < tx.numOutputs(); i++) {
+            Transaction.Output output = tx.getOutput(i);
+            utxoPool.addUTXO(new UTXO(tx.getHash(), i), output);
+        }
+    }
+
+    private void removeTransactionOutputsFromPool(Transaction tx) {
+        for (Transaction.Input i : tx.getInputs()) {
+            UTXO utxo = new UTXO(i.prevTxHash, i.outputIndex);
+            utxoPool.removeUTXO(utxo);
+        }
+    }
+
+    private boolean outputsAreInUTXOPool(Transaction tx) {
+
+        for (Transaction.Input in : tx.getInputs()) {
+            UTXO utxo = new UTXO(in.prevTxHash, in.outputIndex);
+            if (!utxoPool.contains(utxo)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isValidSignature(Transaction tx) {
+        for (int i = 0; i < tx.numInputs(); i++) {
+            Transaction.Input input = tx.getInput(i);
+            UTXO utxo = new UTXO(input.prevTxHash, input.outputIndex);
+            Transaction.Output output = utxoPool.getTxOutput(utxo);
+            if (!Crypto.verifySignature(output.address, tx.getRawDataToSign(i), input.signature)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean noDuplicatedUXTO(Transaction tx) {
+        Set<UTXO> utxoSet = new HashSet<>();
+
+        for (Transaction.Input i : tx.getInputs()) {
+            UTXO utxo = new UTXO(i.prevTxHash, i.outputIndex);
+            if (utxoSet.contains(utxo)) {
+                return false;
+            }
+            utxoSet.add(utxo);
+        }
+
+        return true;
+
+    }
+
+    /*
+     * private boolean outPutValuesNonNegative(Transaction tx) { for
+     * (Transaction.Input i : tx.getInputs()) { UTXO utxo = new
+     * UTXO(i.prevTxHash, i.outputIndex); Transaction.Output output =
+     * utxoPool.getTxOutput(utxo); if (output.value < 0) { return false; } }
+     * 
+     * return true; }
+     */
+
+    private boolean outPutValuesNonNegative(Transaction tx) {
+        for (Transaction.Output output : tx.getOutputs()) {
+
+            if (output.value < 0) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private boolean inputValuesGTEOutput(Transaction tx) {
+        return sumOfInputs(tx.getInputs()) >= sumOfOutputs(tx.getOutputs());
+    }
+
+    private double sumOfInputs(Collection<Transaction.Input> inputs) {
+        double sum = 0.0;
+        for (Transaction.Input i : inputs) {
+            UTXO utxo = new UTXO(i.prevTxHash, i.outputIndex);
+            Transaction.Output output = utxoPool.getTxOutput(utxo);
+            sum += output.value;
+        }
+        return sum;
+    }
+
+    private double sumOfOutputs(Collection<Transaction.Output> outputs) {
+        double sum = 0.0;
+        for (Transaction.Output o : outputs) {
+            sum += o.value;
+        }
+        return sum;
     }
 
 }
